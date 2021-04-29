@@ -7,3 +7,4 @@ tmpinventory
 tmp
 s3.backend.tf
 .DS_Store
+applications/**/build/*

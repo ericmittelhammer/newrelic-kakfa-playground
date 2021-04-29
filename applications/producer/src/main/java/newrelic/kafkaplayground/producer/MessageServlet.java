@@ -58,14 +58,20 @@ public class MessageServlet extends HttpServlet {
         NewRelic.addCustomParameter("user.id", userId);
 
         String messageId = UUID.randomUUID().toString();
-        NewRelic.addCustomParameter("message.id", messageId);
-
+        //NewRelic.addCustomParameter("message.id", messageId);
+        NewRelic.getAgent().getTracedMethod().addCustomAttribute("messaging.system", "kafka");
+        NewRelic.getAgent().getTracedMethod().addCustomAttribute("messaging.destination_kind", "topic");
+        NewRelic.getAgent().getTracedMethod().addCustomAttribute("messaging.operation", "send");
+        NewRelic.getAgent().getTracedMethod().addCustomAttribute("messaging.message_id", messageId);
+        NewRelic.getAgent().getTracedMethod().addCustomAttribute("messaging.kafka.client_id", producerProps.getProperty("client.id"));
         String payload = String.format("{ \"userId\": %s, \"messageId\": %s}", userId, messageId);
         ProducerRecord<String, String> record = new ProducerRecord<String, String>(this.applicationTopicName, userId, payload);
 
+        NewRelic.getAgent().getTracedMethod().addCustomAttribute("messaging.destination", record.topic());
+        NewRelic.getAgent().getTracedMethod().addCustomAttribute("messaging.kafka.message_key", record.key());
 
-        final DistributedTracePayload dtPayload = NewRelic.getAgent().getTransaction().createDistributedTracePayload();
-        record.headers().add("newrelic", dtPayload.text().getBytes(StandardCharsets.UTF_8));
+        // final DistributedTracePayload dtPayload = NewRelic.getAgent().getTransaction().createDistributedTracePayload();
+        // record.headers().add("newrelic", dtPayload.text().getBytes(StandardCharsets.UTF_8));
 
         // only log if the trace is sampled to demonstrate logs-in-context
         if (NewRelic.getAgent().getTraceMetadata().isSampled()) {
@@ -76,19 +82,24 @@ public class MessageServlet extends HttpServlet {
                     @Trace(async = true)
                     public void onCompletion(RecordMetadata metadata, Exception e) {
                         transactionToken.linkAndExpire();
-                        NewRelic.getAgent().getTracedMethod().addCustomAttribute("kafka.producer.config.client.id", producerProps.getProperty("client.id"));
+                        // https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/trace/semantic_conventions/messaging.md
+                        NewRelic.getAgent().getTracedMethod().addCustomAttribute("messaging.system", "kafka");
+                        NewRelic.getAgent().getTracedMethod().addCustomAttribute("messaging.destination_kind", "topic");
+                        NewRelic.getAgent().getTracedMethod().addCustomAttribute("messaging.operation", "send");
+                        NewRelic.getAgent().getTracedMethod().addCustomAttribute("messaging.message_id", messageId);
+                        NewRelic.getAgent().getTracedMethod().addCustomAttribute("messaging.kafka.client_id", producerProps.getProperty("client.id"));
                         if (e != null) {
                             logger.error("Got an error (asynchronously) when sending message {}", messageId, e);
                         } else {
                             // annotate the span with the metadta
                             if (metadata.hasOffset()) {
-                                NewRelic.getAgent().getTracedMethod().addCustomAttribute("kafka.producer.record.offset", metadata.offset());
+                                NewRelic.getAgent().getTracedMethod().addCustomAttribute("messaging.kafka.offset", metadata.offset());
                             }
                             if (metadata.hasTimestamp()) {
-                                NewRelic.getAgent().getTracedMethod().addCustomAttribute("kafka.producer.record.timestamp", metadata.timestamp());
+                                NewRelic.getAgent().getTracedMethod().addCustomAttribute("messaging.kafka.timestamp", metadata.timestamp());
                             }
-                            NewRelic.getAgent().getTracedMethod().addCustomAttribute("kafka.producer.record.partition", metadata.partition());
-                            NewRelic.getAgent().getTracedMethod().addCustomAttribute("kafka.producer.record.topic", metadata.topic());
+                            NewRelic.getAgent().getTracedMethod().addCustomAttribute("messaging.kafka.partition", metadata.partition());
+                            NewRelic.getAgent().getTracedMethod().addCustomAttribute("messaging.destination", metadata.topic());
 
                             // only log if the trace is sampled to demonstrate logs-in-context
                             if (NewRelic.getAgent().getTraceMetadata().isSampled()) {

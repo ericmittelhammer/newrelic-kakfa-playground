@@ -26,6 +26,10 @@ resource "aws_instance" "swarm_nodes" {
   vpc_security_group_ids      = var.security_group_ids
 
   count = var.num_nodes
+  
+  root_block_device {
+    volume_size = count.index == 0 ? 32 : 8
+  }
 
   tags = {
     Name          = "newrelic-kafka-playground-swarm-${count.index}"
