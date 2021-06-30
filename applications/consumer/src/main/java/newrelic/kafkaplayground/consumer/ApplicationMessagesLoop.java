@@ -25,11 +25,14 @@ public class ApplicationMessagesLoop implements Runnable {
     
     private final Properties consumerProperites;
     
-    private final LocalTime[] lagRegressions;
+    private final LocalTime[] processingRegressions;
     private final LocalTime[] consumerRegressions;
-    private final int lagRegressionMinutes = 15;
-    private final int lagSleep = 100;
+    private final LocalTime[] lagRegressions;
+    private final int processingRegressionMinutes = 15;
+    private final int processingSleep = 100;
     private final int consumerRegressionMinutes = 30;
+    private final int lagRegressionMinutes = 5;
+    private final int lagSleep = 3000;
 
     private final KafkaConsumer<String, String> consumer;
     private final List<String> topics;
@@ -37,12 +40,12 @@ public class ApplicationMessagesLoop implements Runnable {
     @Trace(dispatcher = true)
     private void processMessage(ConsumerRecord<String, String> record) throws InterruptedException{
         LocalTime n = LocalTime.now();
-        Duration diff1 = Duration.between(this.lagRegressions[0], n);
-        Duration diff2 = Duration.between(this.lagRegressions[1], n);
+        Duration diff1 = Duration.between(this.processingRegressions[0], n);
+        Duration diff2 = Duration.between(this.processingRegressions[1], n);
         
-        if ((diff1.toMinutes() > 0 && diff1.toMinutes() < this.lagRegressionMinutes) || (diff2.toMinutes() > 0 && diff2.toMinutes() < this.lagRegressionMinutes)) {
-            Thread.sleep(rand.nextInt(this.lagSleep));
-            NewRelic.getAgent().getTracedMethod().addCustomAttribute("somethingIsBroken", "true");
+        if ((diff1.toMinutes() > 0 && diff1.toMinutes() < this.processingRegressionMinutes) || (diff2.toMinutes() > 0 && diff2.toMinutes() < this.processingRegressionMinutes)) {
+            Thread.sleep(rand.nextInt(this.processingSleep));
+            NewRelic.getAgent().getTracedMethod().addCustomAttribute("processingRegression", "true");
         }
         Iterable<Header> headers = record.headers().headers("newrelic");
         for (Header header : headers) {
@@ -74,6 +77,9 @@ public class ApplicationMessagesLoop implements Runnable {
         this.consumerProperites = consumerProperites;
         this.consumer = new KafkaConsumer<>(this.consumerProperites);
         this.rand = new Random();
+        this.processingRegressions = new LocalTime[2];
+        this.processingRegressions[0] = LocalTime.of(rand.nextInt(24), this.rand.nextInt(60));
+        this.processingRegressions[1] = LocalTime.of(rand.nextInt(24), this.rand.nextInt(60));
         this.lagRegressions = new LocalTime[2];
         this.lagRegressions[0] = LocalTime.of(rand.nextInt(24), rand.nextInt(60));
         this.lagRegressions[1] = LocalTime.of(rand.nextInt(24), rand.nextInt(60));
@@ -82,6 +88,7 @@ public class ApplicationMessagesLoop implements Runnable {
         this.consumerRegressions[1] = LocalTime.of(rand.nextInt(24), this.rand.nextInt(60));
         logger.info("Created clientId={} lag regressions: {}, {}", this.consumerProperites.getProperty("client.id"), this.lagRegressions[0].toString(), this.lagRegressions[1].toString());
         logger.info("Created clientId={} consumer regressions: {}, {}", this.consumerProperites.getProperty("client.id"), this.consumerRegressions[0].toString(), this.consumerRegressions[1].toString());
+        logger.info("Created clientId={} processing regressions: {}, {}", this.consumerProperites.getProperty("client.id"), this.processingRegressions[0].toString(), this.processingRegressions[1].toString());
     }
 
     @Override
@@ -104,6 +111,14 @@ public class ApplicationMessagesLoop implements Runnable {
                      if (this.consumer.subscription().isEmpty()) {
                         logger.info("subscribing memberId={}",  this.consumer.groupMetadata().memberId());
                         this.consumer.subscribe(this.topics);
+                    }
+                    LocalTime lagn = LocalTime.now();
+                    Duration lagdiff1 = Duration.between(this.lagRegressions[0], n);
+                    Duration lagdiff2 = Duration.between(this.lagRegressions[1], n);
+                    
+                    if ((lagdiff1.toMinutes() > 0 && lagdiff1.toMinutes() < this.lagRegressionMinutes) || (lagdiff2.toMinutes() > 0 && lagdiff2.toMinutes() < this.lagRegressionMinutes)) {
+                        Thread.sleep(rand.nextInt(this.lagSleep));
+                        NewRelic.getAgent().getTracedMethod().addCustomAttribute("lagRegression", "true");
                     }
                     ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(Long.MAX_VALUE));
                     for (ConsumerRecord<String, String> record : records) {
